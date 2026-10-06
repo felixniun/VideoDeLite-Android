@@ -1,0 +1,16 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# IDE
+.idea/
+*.iml
+local.properties
+
+# Signing
+keystore.properties
+keystore/
+
+# Dist artifacts are regenerated per build
+dist/
