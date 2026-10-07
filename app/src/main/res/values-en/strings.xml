@@ -41,6 +41,7 @@
     <string name="pro_bitrate">Bitrate (Mbps)</string>
     <string name="pro_bitrate_range">Acceptable range %1$.1f–%2$.0f Mbps</string>
     <string name="pro_vbr_hint">VBR targets this as the average bitrate</string>
+    <string name="pro_rc_note">Android encodes with an average bitrate; Quality mode derives the bitrate from the quality value</string>
     <string name="pro_quality">Quality (0 best, 51 worst)</string>
     <string name="pro_quality_hint">Lower is better quality and a larger file</string>
     <string name="pro_audio">Audio</string>
@@ -128,6 +129,7 @@
     <string name="error_server">Server error (%1$d)</string>
     <string name="error_unknown">Something went wrong</string>
     <string name="error_probe_failed">Cannot read this video file</string>
+    <string name="error_encode_failed">Encoding failed: this device does not support the chosen settings. Try H.264 / Simple mode, or adjust the bitrate.</string>
     <string name="permission_storage">Storage permission is required to save compressed videos (Android 9 and below)</string>
     <string name="permission_denied">Permission denied, cannot save output</string>
 

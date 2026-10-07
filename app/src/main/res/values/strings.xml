@@ -44,6 +44,7 @@
     <string name="pro_bitrate">码率（Mbps）</string>
     <string name="pro_bitrate_range">可填 %1$.1f–%2$.0f Mbps</string>
     <string name="pro_vbr_hint">VBR 以该码率作为平均目标</string>
+    <string name="pro_rc_note">安卓端以平均码率编码；「质量」模式按画质数值自动换算码率</string>
     <string name="pro_quality">质量（0 最好，51 最差）</string>
     <string name="pro_quality_hint">数值越小画质越好、体积越大</string>
     <string name="pro_audio">音频</string>
@@ -136,6 +137,7 @@
     <string name="error_server">服务器错误（%1$d）</string>
     <string name="error_unknown">出错了，请重试</string>
     <string name="error_probe_failed">无法读取该视频文件</string>
+    <string name="error_encode_failed">编码失败：该机型不支持所选参数组合，请改用 H.264/简单模式，或调整码率后重试</string>
     <string name="permission_storage">需要存储权限用于保存压缩后的视频（安卓 9 及以下）</string>
     <string name="permission_denied">权限被拒绝，无法保存输出视频</string>
 

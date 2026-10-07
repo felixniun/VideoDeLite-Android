@@ -16,8 +16,8 @@ android {
         applicationId = "com.videodelite.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
         // Same production endpoint as the desktop app (hidden from the UI).
         buildConfigField("String", "API_BASE", "\"https://videodelite1.898280.xyz:28443\"")
     }

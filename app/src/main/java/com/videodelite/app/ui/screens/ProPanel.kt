@@ -65,6 +65,12 @@ fun ProPanel(
                 },
                 onSelect = { onChange(cfg.copy(rateControl = it)) },
             )
+            Text(
+                stringResource(R.string.pro_rc_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
 
         if (cfg.rateControl == RateControl.CQ) {

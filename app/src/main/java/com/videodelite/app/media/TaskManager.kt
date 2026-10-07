@@ -173,11 +173,20 @@ class TaskManager(
             update(id) { it.copy(state = TaskState.CANCELED) }
             throw e
         } catch (e: Exception) {
+            // Raw codec exceptions are hundreds of characters and meaningless
+            // to users; keep the full detail in logcat (VdExport) and show a
+            // short, actionable message in the task list / history.
             val msg = when (e) {
                 is Analyzer.AnalyzerException -> context.getString(R.string.error_probe_failed)
                 is SecurityException -> context.getString(R.string.permission_denied)
-                is CompressEngine.ExportFailure -> e.exportError.message ?: e.message ?: "export failed"
-                else -> e.message ?: "error"
+                is CompressEngine.ExportFailure -> {
+                    android.util.Log.e("VdExport", "export failed: ${e.exportError.errorCodeName}", e.exportError)
+                    context.getString(R.string.error_encode_failed)
+                }
+                else -> {
+                    android.util.Log.e("VdExport", "task failed: ${e.javaClass.simpleName}", e)
+                    context.getString(R.string.error_unknown)
+                }
             }
             val t = _tasks.value.firstOrNull { it.id == id }
             update(id) { it.copy(state = TaskState.FAILED, error = msg) }

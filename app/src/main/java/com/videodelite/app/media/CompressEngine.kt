@@ -1,7 +1,6 @@
 package com.videodelite.app.media
 
 import android.content.Context
-import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
@@ -63,21 +62,19 @@ class CompressEngine(private val context: Context) {
                 .setBitrate((mbps * 1_000_000).toInt())
                 .build()
         } else {
-            // media3 1.5.1 has no setQuality/setMaxBitrate: rate control is
-            // expressed through the platform bitrate mode. CQ therefore maps
-            // to BITRATE_MODE_CQ (0), and VBR's cap is not separately
-            // settable, so the average carries the target.
-            val mode = when (pro.rateControl) {
-                RateControl.CBR -> MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
-                RateControl.VBR -> MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
-                RateControl.CQ -> MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ
-            }
-            val settings = VideoEncoderSettings.Builder()
-                .setBitrate((pro.bitrateMbps * 1_000_000).toInt())
-                .setBitrateMode(mode)
-            // A codec that rejects the requested mode would fail the whole
-            // export, so fall back to the device's supported default.
-            resolveVideoSettings(settings, mode)
+            // media3 1.5.1 exposes only setBitrate/setBitrateMode. Setting a
+            // platform bitrate mode that the device's encoder does not accept
+            // makes MediaCodec.configure() fail outright (Media3 never falls
+            // back) — that is exactly what broke Professional mode on real
+            // hardware while Simple mode kept working. So encode with an
+            // average bitrate only; the rate-control choice decides how that
+            // bitrate is derived.
+            val bps = proBitrateBps(info, pro)
+            android.util.Log.d(
+                "VdExport",
+                "pro encode: rateControl=${pro.rateControl.id} quality=${pro.quality} bitrate=$bps",
+            )
+            VideoEncoderSettings.Builder().setBitrate(bps).build()
         }
 
         val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
@@ -134,29 +131,32 @@ class CompressEngine(private val context: Context) {
             .build()
 
     /**
-     * Builds the video settings, dropping the requested rate-control mode when
-     * no encoder on the device advertises support for it — an unsupported
-     * mode makes the export fail outright rather than falling back.
+     * Resolves the Professional-mode target bitrate (bits/s).
+     *
+     * CBR and VBR both target an average bitrate — without a platform rate
+     * mode they behave the same at the encoder, but the mode still decides how
+     * the number is interpreted by the user. CQ has no CRF/quality API in
+     * media3 1.5.1, so constant quality is approximated by deriving a bitrate
+     * from bits-per-pixel at the source resolution and frame rate.
      */
-    private fun resolveVideoSettings(
-        builder: VideoEncoderSettings.Builder,
-        mode: Int,
-    ): VideoEncoderSettings {
-        val supported = runCatching {
-            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
-                info.isEncoder && info.supportedTypes.any { type ->
-                    type.startsWith("video/") &&
-                        runCatching {
-                            info.getCapabilitiesForType(type)
-                                .encoderCapabilities
-                                .isBitrateModeSupported(mode)
-                        }.getOrDefault(false)
-                }
-            }
-        }.getOrDefault(true)
-        return if (supported) builder.build() else builder.setBitrateMode(
-            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR,
-        ).build()
+    private fun proBitrateBps(info: VideoInfo, pro: ProConfig): Int {
+        val mbps = when (pro.rateControl) {
+            RateControl.CBR, RateControl.VBR -> pro.bitrateMbps
+            RateControl.CQ -> qualityDerivedMbps(info, pro.quality)
+        }
+        val clamped = mbps.coerceIn(ProConfig.MIN_BITRATE_MBPS, ProConfig.MAX_BITRATE_MBPS)
+        return (clamped * 1_000_000).toInt()
+    }
+
+    /** Maps a 0–51 quality value (lower is better) onto a bits-per-pixel target. */
+    private fun qualityDerivedMbps(info: VideoInfo, quality: Int): Double {
+        val q = quality.coerceIn(ProConfig.MIN_QUALITY, ProConfig.MAX_QUALITY)
+        val t = q.toDouble() / ProConfig.MAX_QUALITY.toDouble()
+        val bpp = BEST_BPP - (BEST_BPP - WORST_BPP) * t
+        val fps = if (info.fps > 0) info.fps else 30.0
+        val pixels = info.width.toDouble() * info.height.toDouble()
+        if (pixels <= 0) return ProConfig.MIN_BITRATE_MBPS
+        return pixels * fps * bpp / 1_000_000.0
     }
 
     /**
@@ -190,4 +190,10 @@ class CompressEngine(private val context: Context) {
 
     /** Wraps ExportException with a readable message. */
     class ExportFailure(val exportError: ExportException) : Exception(exportError.message, exportError)
+
+    private companion object {
+        /** Bits-per-pixel at quality 0 (best) and 51 (worst) for CQ mode. */
+        const val BEST_BPP = 0.20
+        const val WORST_BPP = 0.03
+    }
 }

@@ -56,7 +56,7 @@
 | 8 | 输出复检 | ✅ | `validateOutput`：轨道/时长合理性硬检查 |
 | 9 | 落相册 + 重名自动加序号 | ✅ | `OutputSaver`（MediaStore / 旧版写权限） |
 | 10 | 压缩历史（Room） | ✅ | 含 `mode` 列（simple/professional），Room v2 迁移 |
-| 11 | **Professional 模式** | ✅ | 自定义码率 + CBR/VBR/CQ + 音频码率 |
+| 11 | **Professional 模式** | ✅ | 自定义码率 + CBR/VBR/质量 码控 + 音频码率 |
 | 12 | 账号 / 设备 / 授权全套 | ✅ | 注册/验证码/登录/刷新轮换/设备激活吊销/注销 |
 | 13 | 五页 UI + 中英双语 + 浅/深/跟随系统 | ✅ | 首页/任务/历史/设置/账号 |
 | 14 | 「打开方式 → VideoDelite」直接入队 | ✅ | `ACTION_VIEW video/*`，免登录，对齐桌面拖拽导入 |
@@ -69,7 +69,8 @@
 | 1.0.0 | 2026-10-06 | 首个交付；**压缩管线有线程 bug，已报废勿用** |
 | 1.0.1 | 2026-10-07 | E2E 三修复 + 打开方式；签名更换（1.0.0 需先卸载） |
 | 1.0.2 | 2026-10-07 | 新增 Professional 模式；修主题切换频闪、修激活卡死 |
-| **1.0.3** | **2026-10-07** | **专业模式改为登录即解锁**（不再要求设备激活成功） |
+| 1.0.3 | 2026-10-07 | 专业模式改为登录即解锁（不再要求设备激活成功） |
+| **1.0.4** | **2026-10-07** | **修复专业模式真机编码失败**（去掉 `setBitrateMode`，改用平均码率） |
 
 ---
 
@@ -247,7 +248,7 @@ AccountScreen → AccountClient.login() → VdApi(/auth/login) → 存令牌 →
 | 冲突策略 4 种 | 重名自动加序号 | MediaStore 标准行为 |
 | `--cli` 无头模式 | 不适用 | 安卓无常驻 CLI 场景 |
 | Pro 面板含 MKV/字幕/章节/元数据保留 | 不含 | 无 ffmpeg 无法实现 |
-| Pro 面板 VBR 有独立上限、音频 VBR 质量档 | VBR 上限并入平均码率；音频 VBR 按等效码率 | media3 1.5.1 的 `VideoEncoderSettings` 只有 `setBitrate`/`setBitrateMode`，`AudioEncoderSettings` 只有 `setBitrate`；CQ 映射为 `BITRATE_MODE_CQ` |
+| Pro 面板 VBR 有独立上限、CQ 用 CRF、音频 VBR 质量档 | 统一以**平均码率**编码：CBR/VBR 用填写的码率，质量模式按画质数值换算码率；音频 VBR 按等效码率 | media3 1.5.1 的 `VideoEncoderSettings` 只有 `setBitrate`/`setBitrateMode`，`AudioEncoderSettings` 只有 `setBitrate`。实测证明设置硬件编码器不接受的 `setBitrateMode` 会让 `MediaCodec.configure()` 硬失败且 media3 不回退（见已知限制 2），故只设码率 |
 
 ---
 
@@ -255,16 +256,22 @@ AccountScreen → AccountClient.login() → VdApi(/auth/login) → 存令牌 →
 
 1. **签名密钥不在仓库**：`keystore/videodelite.keystore` + `keystore.properties` 均 gitignore。
    **务必异地备份**——丢失后无法同签名升级，只能卸载重装。1.0.1 起签名已更换，1.0.0 需先卸载。
-2. **设备激活（服务端）**：真机登录正常，但设备激活在服务端 `handleActivate`
+2. **专业模式码控为近似实现**：media3 1.5.1 无法设置 CRF/质量，且设置硬件编码器不接受的
+   `setBitrateMode` 会让 `MediaCodec.configure()` 硬失败（media3 不回退）——1.0.3 在真机
+   4K H.264 上实测到 `Codec exception` 与裸 `error`，1.0.4 起**只设平均码率**，码控方式
+   仅决定码率怎么算。CBR 与 VBR 在编码器层面因此等价，界面已注明。
+3. **设备激活（服务端）**：真机登录正常，但设备激活在服务端 `handleActivate`
    （`UpsertDevice` MSSQL `MERGE` → `GetActiveLicense` → `CreateLicense`）可能挂起/超时。
    1.0.3 起激活降级为**后台静默登记**，失败不影响专业模式解锁——但服务端仍建议排查该链路。
-3. **DNS 解析**：公网 DNS（Cloudflare 托管）当前把 `videodelite1.898280.xyz` 解析到内网
+4. **DNS 解析**：公网 DNS（Cloudflare 托管）当前把 `videodelite1.898280.xyz` 解析到内网
    `192.168.100.101`。内网 hosts 可正常使用；**真机在家庭网络之外（移动数据）可能连不上**，
    建议改为公网 A 记录 + 端口转发，或上 Cloudflare Tunnel。
-4. **后台存活边界**：切后台/熄屏/从最近任务划掉都继续；ROM「一键清理」或系统「强行停止」
+5. **后台存活边界**：切后台/熄屏/从最近任务划掉都继续；ROM「一键清理」或系统「强行停止」
    会真杀进程丢任务。想停用任务页「取消」。
-5. **通知权限**：Android 13+ 首次压缩会请求，建议允许，否则后台无进度可见。
-6. **1.0.0 已报废**：压缩线程 bug 在任何设备触发，归档中仅留痕。
+6. **通知权限**：Android 13+ 首次压缩会请求，建议允许，否则后台无进度可见。
+7. **前台服务类型降级**：API 35 优先 `mediaProcessing`，部分系统镜像/模拟器直接拒绝
+   （`InvalidForegroundServiceTypeException`），代码自动降级为 `dataSync`，属预期行为。
+8. **1.0.0 已报废**：压缩线程 bug 在任何设备触发，归档中仅留痕。
 
 ---
 
