@@ -57,21 +57,20 @@ class AccountClient(
     val state: StateFlow<AccountState> = _state.asStateFlow()
 
     init {
-        // Restore a persisted session (if any) and re-activate this device.
+        // Restore a persisted session (if any) and re-register this device in
+        // the background. Sign-in already unlocks Professional mode (V1: the
+        // server auto-issues a license to every verified account), so device
+        // activation never blocks the UI — it only refreshes the device list.
         scope.launch {
             val session = tokens.load() ?: return@launch
             _state.value = AccountState(
                 loggedIn = true,
                 username = session.username,
                 email = session.email,
-                license = LicenseState.LOADING,
-                activating = true,
+                license = LicenseState.ACTIVE,
+                activating = false,
             )
-            // activateDevice() clears the `activating` flag on every outcome.
             runCatching { activateDevice() }
-                .onFailure {
-                    _state.value = _state.value.copy(license = LicenseState.NONE, activating = false)
-                }
         }
     }
 
@@ -90,14 +89,17 @@ class AccountClient(
                 email = account.email,
             )
         )
+        // Sign-in unlocks Professional mode immediately; device activation
+        // runs in the background and only refreshes the device list (its
+        // failure downgrades the *displayed* license but not the unlock).
         _state.value = AccountState(
             loggedIn = true,
             username = account.username,
             email = account.email,
-            license = LicenseState.LOADING,
-            activating = true,
+            license = LicenseState.ACTIVE,
+            activating = false,
         )
-        runCatching { activateDevice() }
+        scope.launch { runCatching { activateDevice() } }
     }
 
     suspend fun register(username: String, email: String, password: String, inviteCode: String?): RegisterResponse =
@@ -115,36 +117,42 @@ class AccountClient(
         return resp.message
     }
 
-    /** Idempotent per-session device activation; keeps lastSeen fresh. */
+    /**
+     * Background device registration (idempotent; keeps lastSeen fresh).
+     *
+     * Professional mode is already unlocked by sign-in (V1: the server
+     * auto-issues a license to every verified account), so a transient failure
+     * here — network trouble, or the server's device/license tables hanging —
+     * must NOT flip the account back to "not activated". Only an explicit 403
+     * (revoked device / banned account) locks the feature.
+     */
     suspend fun activateDevice(): LicenseState {
+        val fallback = _state.value.license
         if (tokens.load() == null) {
             _state.value = _state.value.copy(license = LicenseState.NONE, activating = false)
             return LicenseState.NONE
         }
-        // Any failure below must still clear `activating`, otherwise the UI
-        // spins forever on "device activating" (only ApiException used to be
-        // handled; a transport/parse failure left the flag stuck).
+        // Every branch clears `activating`, otherwise the UI spins forever on
+        // "device activating" (a transport/parse failure used to leave it set).
         return try {
             val resp = apiCall {
                 api.activate(ActivateRequest(DeviceId.get(appContext), BuildConfig.VERSION_NAME))
             }
-            val license = if (resp.status == "authorized") LicenseState.ACTIVE else LicenseState.NONE
+            val license = if (resp.status == "authorized") LicenseState.ACTIVE else fallback
             _state.value = _state.value.copy(license = license, activating = false)
             license
         } catch (e: ApiException) {
-            val license = when (e.code) {
-                403 -> LicenseState.REVOKED
-                else -> LicenseState.NONE
-            }
+            val license = if (e.code == 403) LicenseState.REVOKED else fallback
             android.util.Log.w("VdAccount", "activate failed: HTTP ${e.code} ${e.message}")
             _state.value = _state.value.copy(license = license, activating = false)
             license
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // Transient (network / timeout / parse): keep the sign-in state.
             android.util.Log.w("VdAccount", "activate failed: ${e.javaClass.simpleName} ${e.message}")
-            _state.value = _state.value.copy(license = LicenseState.NONE, activating = false)
-            LicenseState.NONE
+            _state.value = _state.value.copy(license = fallback, activating = false)
+            fallback
         }
     }
 

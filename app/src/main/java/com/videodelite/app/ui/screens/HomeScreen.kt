@@ -170,10 +170,12 @@ fun HomeScreen(modifier: Modifier = Modifier, onStarted: () -> Unit, onGoAccount
 
     val readyCount = pending.count { it.info != null }
 
-    // Professional mode is unlocked by an active license, mirroring the
-    // desktop's rule: account state gates starting a *new* task only and never
-    // touches compression already running.
-    val unlocked = accountState.license == LicenseState.ACTIVE
+    // Professional mode is unlocked by sign-in (V1: the server auto-issues a
+    // license to every verified account, so device activation is a background
+    // registration step that must not block the feature). Account state gates
+    // starting a *new* task only and never touches compression already running
+    // (desktop parity).
+    val unlocked = accountState.loggedIn
     val proMode = mode == "professional"
     val proError = ProConfig.error(pro)
     val canStart = readyCount > 0 && (!proMode || (unlocked && proError == null))
