@@ -12,6 +12,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -106,13 +111,9 @@ fun ProPanel(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
-                    OutlinedTextField(
-                        value = formatMbps(cfg.bitrateMbps),
-                        onValueChange = { raw ->
-                            parseMbps(raw)?.let { onChange(cfg.copy(bitrateMbps = it)) }
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    BitrateField(
+                        valueMbps = cfg.bitrateMbps,
+                        onValueChange = { onChange(cfg.copy(bitrateMbps = it)) },
                         modifier = Modifier.width(130.dp),
                     )
                 }
@@ -182,6 +183,51 @@ fun ProPanel(
             )
         }
     }
+}
+
+/**
+ * Bitrate input that owns its text.
+ *
+ * Deriving the field text straight from the numeric model loses in-progress
+ * edits: an empty field and a trailing decimal point both fail to parse, so
+ * the model never updated and the field snapped back to the old number —
+ * which is what made the last digit impossible to delete.
+ */
+@Composable
+private fun BitrateField(
+    valueMbps: Double,
+    onValueChange: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var text by remember { mutableStateOf(formatMbps(valueMbps)) }
+    // Re-sync only when the model moved away from what the text already means
+    // (e.g. another control changed it); while typing the raw text is kept.
+    LaunchedEffect(valueMbps) {
+        if (parseMbps(text) != valueMbps) text = formatMbps(valueMbps)
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            // Digits plus a single decimal separator (',' is normalised to '.').
+            var seenSeparator = false
+            val cleaned = buildString {
+                for (c in raw) {
+                    when {
+                        c.isDigit() -> append(c)
+                        (c == '.' || c == ',') && !seenSeparator -> {
+                            seenSeparator = true
+                            append('.')
+                        }
+                    }
+                }
+            }
+            text = cleaned
+            parseMbps(cleaned)?.let(onValueChange)
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        modifier = modifier,
+    )
 }
 
 private fun formatMbps(v: Double): String =
