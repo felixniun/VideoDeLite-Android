@@ -1,11 +1,13 @@
 package com.videodelite.app.media
 
 import android.content.Context
+import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.AudioEncoderSettings
 import androidx.media3.transformer.DefaultEncoderFactory
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.ExportException
@@ -49,19 +51,39 @@ class CompressEngine(private val context: Context) {
         info: VideoInfo,
         codec: VideoCodec,
         quality: Quality,
+        pro: ProConfig? = null,
         outputFile: File,
         onProgress: (Int) -> Unit,
     ): Unit = withContext(Dispatchers.Main) {
-        val mbps = Bitrate.simpleBitrateMbps(
-            info.width, info.height, info.fps, codec.id, quality.id,
-        )
-        val bitrateBps = (mbps * 1_000_000).toInt()
-
-        val encoderFactory = DefaultEncoderFactory.Builder(context)
-            .setRequestedVideoEncoderSettings(
-                VideoEncoderSettings.Builder().setBitrate(bitrateBps).build()
+        val videoSettings = if (pro == null) {
+            val mbps = Bitrate.simpleBitrateMbps(
+                info.width, info.height, info.fps, codec.id, quality.id,
             )
-            .build()
+            VideoEncoderSettings.Builder()
+                .setBitrate((mbps * 1_000_000).toInt())
+                .build()
+        } else {
+            // media3 1.5.1 has no setQuality/setMaxBitrate: rate control is
+            // expressed through the platform bitrate mode. CQ therefore maps
+            // to BITRATE_MODE_CQ (0), and VBR's cap is not separately
+            // settable, so the average carries the target.
+            val mode = when (pro.rateControl) {
+                RateControl.CBR -> MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+                RateControl.VBR -> MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR
+                RateControl.CQ -> MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ
+            }
+            val settings = VideoEncoderSettings.Builder()
+                .setBitrate((pro.bitrateMbps * 1_000_000).toInt())
+                .setBitrateMode(mode)
+            // A codec that rejects the requested mode would fail the whole
+            // export, so fall back to the device's supported default.
+            resolveVideoSettings(settings, mode)
+        }
+
+        val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
+            .setRequestedVideoEncoderSettings(videoSettings)
+        pro?.let { encoderFactoryBuilder.setRequestedAudioEncoderSettings(audioSettings(it)) }
+        val encoderFactory = encoderFactoryBuilder.build()
 
         val transformer = Transformer.Builder(context)
             .setEncoderFactory(encoderFactory)
@@ -98,6 +120,43 @@ class CompressEngine(private val context: Context) {
             runCatching { transformer.cancel() }
             throw e
         }
+    }
+
+    /**
+     * Audio settings for Professional mode. media3's AudioEncoderSettings
+     * only exposes `setBitrate` (no quality/VBR knob), so the desktop's
+     * audio-VBR mode is approximated by its equivalent average bitrate; the
+     * clamp matches the desktop's 64–512 kbps range.
+     */
+    private fun audioSettings(pro: ProConfig): AudioEncoderSettings =
+        AudioEncoderSettings.Builder()
+            .setBitrate(pro.audioBitrateKbps.coerceIn(64, 512) * 1000)
+            .build()
+
+    /**
+     * Builds the video settings, dropping the requested rate-control mode when
+     * no encoder on the device advertises support for it — an unsupported
+     * mode makes the export fail outright rather than falling back.
+     */
+    private fun resolveVideoSettings(
+        builder: VideoEncoderSettings.Builder,
+        mode: Int,
+    ): VideoEncoderSettings {
+        val supported = runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+                info.isEncoder && info.supportedTypes.any { type ->
+                    type.startsWith("video/") &&
+                        runCatching {
+                            info.getCapabilitiesForType(type)
+                                .encoderCapabilities
+                                .isBitrateModeSupported(mode)
+                        }.getOrDefault(false)
+                }
+            }
+        }.getOrDefault(true)
+        return if (supported) builder.build() else builder.setBitrateMode(
+            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR,
+        ).build()
     }
 
     /**

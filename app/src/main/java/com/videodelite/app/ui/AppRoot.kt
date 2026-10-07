@@ -89,7 +89,7 @@ fun AppRoot() {
             "history" -> HistoryScreen(modifier)
             "settings" -> SettingsScreen(modifier, onGoAccount = { current = "account" })
             "account" -> AccountScreen(modifier)
-            else -> HomeScreen(modifier, onStarted = { current = "tasks" })
+            else -> HomeScreen(modifier, onStarted = { current = "tasks" }, onGoAccount = { current = "account" })
         }
     }
 }

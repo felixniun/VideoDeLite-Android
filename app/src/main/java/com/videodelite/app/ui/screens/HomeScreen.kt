@@ -38,14 +38,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.videodelite.app.AppGraph
 import com.videodelite.app.R
 import com.videodelite.app.core.Format
+import com.videodelite.app.media.ProConfig
 import com.videodelite.app.media.Quality
 import com.videodelite.app.media.VideoCodec
 import com.videodelite.app.media.VideoInfo
+import com.videodelite.app.network.LicenseState
 import com.videodelite.app.ui.components.SectionCard
 import com.videodelite.app.ui.components.SectionLabel
 import com.videodelite.app.ui.components.VdSegmented
@@ -79,17 +82,38 @@ class HomeViewModel(app: android.app.Application) : AndroidViewModel(app) {
     private val _hevcAvailable = MutableStateFlow(true)
     val hevcAvailable: StateFlow<Boolean> = _hevcAvailable.asStateFlow()
 
+    /** simple | professional — professional is gated on an active license. */
+    private val _mode = MutableStateFlow("simple")
+    val mode: StateFlow<String> = _mode.asStateFlow()
+
+    private val _pro = MutableStateFlow(ProConfig())
+    val pro: StateFlow<ProConfig> = _pro.asStateFlow()
+
     init {
         viewModelScope.launch {
             _hevcAvailable.value = AppGraph.engine.hasHevcEncoder()
             val s = AppGraph.settings.current()
             _codec.value = if (s.defaultCodec == "h265") VideoCodec.H265 else VideoCodec.H264
             _quality.value = Quality.entries.firstOrNull { it.id == s.defaultQuality } ?: Quality.MID
+            _pro.value = _pro.value.copy(
+                codec = _codec.value,
+                audioBitrateKbps = 128,
+            )
         }
     }
 
-    fun setCodec(c: VideoCodec) { _codec.value = c }
+    fun setCodec(c: VideoCodec) {
+        _codec.value = c
+        // Keep the professional panel's codec in step with Simple mode so
+        // switching modes never silently changes the encoder.
+        _pro.value = _pro.value.copy(codec = c)
+    }
+
     fun setQuality(q: Quality) { _quality.value = q }
+
+    fun setMode(m: String) { _mode.value = m }
+
+    fun setPro(cfg: ProConfig) { _pro.value = cfg }
 
     fun addUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -115,30 +139,48 @@ class HomeViewModel(app: android.app.Application) : AndroidViewModel(app) {
         _pending.value = _pending.value.filter { it.id != id }
     }
 
-    fun start(onQueued: () -> Unit) {
+    fun start(unlocked: Boolean, onQueued: () -> Unit) {
         val uris = _pending.value.filter { it.info != null }.map { it.info!!.uri }
         if (uris.isEmpty()) return
-        AppGraph.taskManager.enqueue(uris, _codec.value, _quality.value)
+        val professional = _mode.value == "professional" && unlocked &&
+            ProConfig.error(_pro.value) == null
+        if (professional) {
+            val cfg = _pro.value
+            AppGraph.taskManager.enqueue(uris, cfg.codec, _quality.value, cfg)
+        } else {
+            AppGraph.taskManager.enqueue(uris, _codec.value, _quality.value)
+        }
         _pending.value = emptyList()
         onQueued()
     }
 }
 
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier, onStarted: () -> Unit) {
+fun HomeScreen(modifier: Modifier = Modifier, onStarted: () -> Unit, onGoAccount: () -> Unit) {
     val context = LocalContext.current
     val vm: HomeViewModel = viewModel()
     val pending by vm.pending.collectAsState()
     val codec by vm.codec.collectAsState()
     val quality by vm.quality.collectAsState()
     val hevcAvailable by vm.hevcAvailable.collectAsState()
+    val mode by vm.mode.collectAsState()
+    val pro by vm.pro.collectAsState()
     val parallelLimit by AppGraph.taskManager.parallelLimit.collectAsState()
+    val accountState by AppGraph.account.state.collectAsStateWithLifecycle()
 
     val readyCount = pending.count { it.info != null }
 
+    // Professional mode is unlocked by an active license, mirroring the
+    // desktop's rule: account state gates starting a *new* task only and never
+    // touches compression already running.
+    val unlocked = accountState.license == LicenseState.ACTIVE
+    val proMode = mode == "professional"
+    val proError = ProConfig.error(pro)
+    val canStart = readyCount > 0 && (!proMode || (unlocked && proError == null))
+
     val beginStart: () -> Unit = {
-        if (readyCount > 0) {
-            vm.start {
+        if (canStart) {
+            vm.start(unlocked) {
                 Toast.makeText(context, context.getString(R.string.home_start_toast), Toast.LENGTH_SHORT).show()
                 onStarted()
             }
@@ -171,6 +213,39 @@ fun HomeScreen(modifier: Modifier = Modifier, onStarted: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        SectionLabel(stringResource(R.string.home_mode))
+        SectionCard {
+            VdSegmented(
+                options = listOf("simple", "professional"),
+                selected = mode,
+                label = {
+                    if (it == "simple") stringResource(R.string.mode_simple)
+                    else stringResource(R.string.mode_professional)
+                },
+                onSelect = vm::setMode,
+            )
+        }
+
+        if (proMode && !unlocked) {
+            SectionCard {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.pro_locked),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = onGoAccount, modifier = Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.pro_go_login))
+                    }
+                }
+            }
+        }
+
+        if (proMode && unlocked) {
+            ProPanel(cfg = pro, hevcAvailable = hevcAvailable, onChange = vm::setPro)
+        }
+
+        if (!proMode) {
         SectionLabel(stringResource(R.string.home_codec))
         SectionCard {
             VdSegmented(
@@ -217,6 +292,7 @@ fun HomeScreen(modifier: Modifier = Modifier, onStarted: () -> Unit) {
                 },
                 onSelect = vm::setQuality,
             )
+        }
         }
 
         SectionLabel(stringResource(R.string.home_pick))
@@ -271,7 +347,7 @@ fun HomeScreen(modifier: Modifier = Modifier, onStarted: () -> Unit) {
                 }
                 if (needed.isEmpty()) beginStart() else permissionLauncher.launch(needed.toTypedArray())
             },
-            enabled = readyCount > 0,
+            enabled = canStart,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.home_start))

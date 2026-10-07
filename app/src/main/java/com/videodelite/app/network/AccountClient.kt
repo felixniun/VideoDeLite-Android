@@ -5,6 +5,7 @@ import com.videodelite.app.BuildConfig
 import com.videodelite.app.data.DeviceId
 import com.videodelite.app.data.Session
 import com.videodelite.app.data.TokenStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,7 +67,11 @@ class AccountClient(
                 license = LicenseState.LOADING,
                 activating = true,
             )
+            // activateDevice() clears the `activating` flag on every outcome.
             runCatching { activateDevice() }
+                .onFailure {
+                    _state.value = _state.value.copy(license = LicenseState.NONE, activating = false)
+                }
         }
     }
 
@@ -112,7 +117,13 @@ class AccountClient(
 
     /** Idempotent per-session device activation; keeps lastSeen fresh. */
     suspend fun activateDevice(): LicenseState {
-        if (tokens.load() == null) return LicenseState.NONE
+        if (tokens.load() == null) {
+            _state.value = _state.value.copy(license = LicenseState.NONE, activating = false)
+            return LicenseState.NONE
+        }
+        // Any failure below must still clear `activating`, otherwise the UI
+        // spins forever on "device activating" (only ApiException used to be
+        // handled; a transport/parse failure left the flag stuck).
         return try {
             val resp = apiCall {
                 api.activate(ActivateRequest(DeviceId.get(appContext), BuildConfig.VERSION_NAME))
@@ -125,8 +136,15 @@ class AccountClient(
                 403 -> LicenseState.REVOKED
                 else -> LicenseState.NONE
             }
+            android.util.Log.w("VdAccount", "activate failed: HTTP ${e.code} ${e.message}")
             _state.value = _state.value.copy(license = license, activating = false)
             license
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("VdAccount", "activate failed: ${e.javaClass.simpleName} ${e.message}")
+            _state.value = _state.value.copy(license = LicenseState.NONE, activating = false)
+            LicenseState.NONE
         }
     }
 

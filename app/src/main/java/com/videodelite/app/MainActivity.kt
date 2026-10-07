@@ -8,10 +8,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.videodelite.app.data.AppSettings
@@ -30,20 +35,18 @@ class MainActivity : AppCompatActivity() {
             val settings by AppGraph.settings.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
 
+            // Driving AppCompatDelegate.setDefaultNightMode for an in-app theme
+            // choice recreates the Activity on every settings change; combined
+            // with the Compose theme recomposition that produced a rapid
+            // recreate storm (visible flicker, and the window was untouchable
+            // until it settled). The theme is therefore resolved here, in
+            // Compose, and the delegate is left on FOLLOW_SYSTEM so the system
+            // dark-mode signal still reaches isSystemInDarkTheme().
+            val systemDark = isSystemInDarkTheme()
             val dark = when (settings.theme) {
                 "light" -> false
                 "dark" -> true
-                else -> isSystemInDarkTheme()
-            }
-            LaunchedEffect(settings.theme) {
-                val mode = when (settings.theme) {
-                    "light" -> AppCompatDelegate.MODE_NIGHT_NO
-                    "dark" -> AppCompatDelegate.MODE_NIGHT_YES
-                    else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-                }
-                if (AppCompatDelegate.getDefaultNightMode() != mode) {
-                    AppCompatDelegate.setDefaultNightMode(mode)
-                }
+                else -> systemDark
             }
             LaunchedEffect(settings.language) {
                 val wanted = if (settings.language.isEmpty()) {
@@ -57,7 +60,22 @@ class MainActivity : AppCompatActivity() {
             }
 
             VdTheme(darkTheme = dark) {
-                AppRoot()
+                // Keep the system bars legible against the chosen theme; the
+                // XML window background can only follow the system, so the
+                // Compose root paints over it.
+                LaunchedEffect(dark) {
+                    val controller = androidx.core.view.WindowCompat
+                        .getInsetsController(window, window.decorView)
+                    controller.isAppearanceLightStatusBars = !dark
+                    controller.isAppearanceLightNavigationBars = !dark
+                }
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                ) {
+                    AppRoot()
+                }
             }
         }
     }

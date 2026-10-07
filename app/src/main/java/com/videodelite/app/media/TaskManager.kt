@@ -29,6 +29,8 @@ data class CompressionTask(
     val displayName: String,
     val codec: VideoCodec,
     val quality: Quality,
+    /** Non-null when this task came from Professional mode. */
+    val pro: ProConfig? = null,
     val state: TaskState = TaskState.QUEUED,
     val progress: Int = 0,
     val sourceSizeBytes: Long = 0,
@@ -64,7 +66,7 @@ class TaskManager(
         _parallelLimit.value = n.coerceIn(1, 3)
     }
 
-    fun enqueue(uris: List<Uri>, codec: VideoCodec, quality: Quality) {
+    fun enqueue(uris: List<Uri>, codec: VideoCodec, quality: Quality, pro: ProConfig? = null) {
         if (uris.isEmpty()) return
         val created = uris.map { uri ->
             CompressionTask(
@@ -73,6 +75,7 @@ class TaskManager(
                 displayName = uri.lastPathSegment ?: "video",
                 codec = codec,
                 quality = quality,
+                pro = pro,
             )
         }
         _tasks.value = _tasks.value + created
@@ -132,7 +135,7 @@ class TaskManager(
 
             val out = File(context.cacheDir, "vd_out_$id.mp4")
             tempFile = out
-            engine.compress(info, task.codec, task.quality, out) { p ->
+            engine.compress(info, task.codec, task.quality, task.pro, out) { p ->
                 update(id) { if (it.state == TaskState.COMPRESSING) it.copy(progress = p) else it }
             }
             if (!engine.validateOutput(out, info.durationMs)) {
@@ -163,6 +166,7 @@ class TaskManager(
                     status = "success",
                     error = null,
                     outputName = saved.second,
+                    mode = if (task.pro != null) "professional" else "simple",
                 )
             )
         } catch (e: CancellationException) {
@@ -191,6 +195,7 @@ class TaskManager(
                     status = "failed",
                     error = msg,
                     outputName = null,
+                    mode = if (task.pro != null) "professional" else "simple",
                 )
             )
         } finally {

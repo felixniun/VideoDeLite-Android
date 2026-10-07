@@ -300,6 +300,19 @@ private fun LoggedInView(modifier: Modifier = Modifier, state: com.videodelite.a
                         color = if (state.license == LicenseState.ACTIVE) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Activation can fail on a flaky network; without an
+                    // explicit retry the account looks permanently stuck.
+                    if (state.license == LicenseState.NONE) {
+                        Spacer(Modifier.size(4.dp))
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    AppGraph.account.activateDevice()
+                                    reload++
+                                }
+                            },
+                        ) { Text(stringResource(R.string.retry)) }
+                    }
                 }
             }
         }

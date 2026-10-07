@@ -29,6 +29,23 @@
     <string name="home_parallel_hint">Up to %1$d concurrent tasks</string>
     <string name="home_remove">Remove</string>
 
+    <!-- Professional mode -->
+    <string name="home_mode">Mode</string>
+    <string name="mode_simple">Simple</string>
+    <string name="mode_professional">Professional</string>
+    <string name="pro_locked">Professional mode requires a signed-in account</string>
+    <string name="pro_go_login">Sign in</string>
+    <string name="pro_video">Video</string>
+    <string name="pro_rate_control">Rate control</string>
+    <string name="pro_rc_cq">Quality</string>
+    <string name="pro_bitrate">Bitrate (Mbps)</string>
+    <string name="pro_bitrate_range">Acceptable range %1$.1f–%2$.0f Mbps</string>
+    <string name="pro_vbr_hint">VBR targets this as the average bitrate</string>
+    <string name="pro_quality">Quality (0 best, 51 worst)</string>
+    <string name="pro_quality_hint">Lower is better quality and a larger file</string>
+    <string name="pro_audio">Audio</string>
+    <string name="pro_audio_bitrate">Audio bitrate</string>
+
     <string name="tasks_empty">No tasks</string>
     <string name="task_state_queued">Queued</string>
     <string name="task_state_analyzing">Analyzing</string>

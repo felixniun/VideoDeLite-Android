@@ -32,6 +32,23 @@
     <string name="home_parallel_hint">最多同时压缩 %1$d 个任务</string>
     <string name="home_remove">移除</string>
 
+    <!-- Professional mode -->
+    <string name="home_mode">压缩模式</string>
+    <string name="mode_simple">简单</string>
+    <string name="mode_professional">专业</string>
+    <string name="pro_locked">专业模式需登录账号后解锁</string>
+    <string name="pro_go_login">去登录</string>
+    <string name="pro_video">视频</string>
+    <string name="pro_rate_control">码率控制</string>
+    <string name="pro_rc_cq">质量</string>
+    <string name="pro_bitrate">码率（Mbps）</string>
+    <string name="pro_bitrate_range">可填 %1$.1f–%2$.0f Mbps</string>
+    <string name="pro_vbr_hint">VBR 以该码率作为平均目标</string>
+    <string name="pro_quality">质量（0 最好，51 最差）</string>
+    <string name="pro_quality_hint">数值越小画质越好、体积越大</string>
+    <string name="pro_audio">音频</string>
+    <string name="pro_audio_bitrate">音频码率</string>
+
     <!-- Tasks -->
     <string name="tasks_empty">暂无任务</string>
     <string name="task_state_queued">排队中</string>
