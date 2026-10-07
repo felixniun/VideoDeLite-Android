@@ -60,7 +60,15 @@ class ExportService : LifecycleService() {
         } else {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         }
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, type)
+        } catch (e: Exception) {
+            // Some platform images reject the mediaProcessing type; fall back
+            // to dataSync (declared in the manifest for every API level).
+            android.util.Log.e("VdExport", "FGS type=$type rejected, falling back to dataSync", e)
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        }
     }
 
     private fun buildNotification(activeCount: Int): Notification {

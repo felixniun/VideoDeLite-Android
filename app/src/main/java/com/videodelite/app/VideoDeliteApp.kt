@@ -37,6 +37,7 @@ class VideoDeliteApp : Application() {
     private fun registerDebugEnqueueReceiver() {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
+                android.util.Log.d("VdDebug", "enqueue broadcast received: ${intent.data}")
                 val uri = intent.data ?: return
                 val codec = if (intent.getStringExtra("codec") == "h265") VideoCodec.H265 else VideoCodec.H264
                 val quality = when (intent.getStringExtra("quality")) {
@@ -51,5 +52,6 @@ class VideoDeliteApp : Application() {
             this, receiver, IntentFilter("com.videodelite.DEBUG_ENQUEUE"),
             ContextCompat.RECEIVER_EXPORTED,
         )
+        android.util.Log.d("VdDebug", "debug enqueue receiver registered")
     }
 }

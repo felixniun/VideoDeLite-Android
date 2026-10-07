@@ -54,15 +54,16 @@ keytool -genkeypair -v -keystore keystore/videodelite.keystore \
 
 没有 `keystore.properties` 时 `assembleRelease` 自动退回 debug 签名（仅便于本地起跑，不可作分发）。
 
-### 调试辅助（仅 Debug 构建）
+### 调试辅助与"打开方式"入队
 
-`VideoDeliteApp` 注册了一个仅 `BuildConfig.DEBUG` 生效的广播接收器，供模拟器自动化测试绕过照片选择器直接入队：
+App 注册了 `ACTION_VIEW video/*`：系统文件管理器里对任意视频选「打开方式 → VideoDelite」即直接入队压缩（Simple 模式参数，免登录，与桌面版拖拽导入对等）。自动化测试同样走这条通道：
 
 ```bash
-adb shell am broadcast -a com.videodelite.DEBUG_ENQUEUE -d <video content uri> --es codec h264 --es quality mid
+adb shell am start -a android.intent.action.VIEW --grant-read-uri-permission \
+  -d <video content uri> -t video/mp4 -n com.videodelite.app/.MainActivity
 ```
 
-Release 构建不含此入口。
+另有一个仅 `BuildConfig.DEBUG` 生效的入队广播接收器（`com.videodelite.DEBUG_ENQUEUE`，部分模拟器的广播队列不可靠，优先用上面的 intent 通道）。Release 构建里广播接收器不存在，VIEW 通道保留。
 
 ## 目录结构
 

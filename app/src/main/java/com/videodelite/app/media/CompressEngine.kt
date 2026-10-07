@@ -40,6 +40,10 @@ class CompressEngine(private val context: Context) {
     /**
      * Compresses [info] into [outputFile] (MP4) using the frozen bitrate
      * table, reporting progress 0–100 through [onProgress].
+     *
+     * Every Transformer call (build/start/getProgress/cancel) must happen on
+     * a Looper thread — this whole block runs on the main looper; media3 does
+     * the actual encoding on its own worker threads.
      */
     suspend fun compress(
         info: VideoInfo,
@@ -47,7 +51,7 @@ class CompressEngine(private val context: Context) {
         quality: Quality,
         outputFile: File,
         onProgress: (Int) -> Unit,
-    ): Unit = withContext(Dispatchers.Default) {
+    ): Unit = withContext(Dispatchers.Main) {
         val mbps = Bitrate.simpleBitrateMbps(
             info.width, info.height, info.fps, codec.id, quality.id,
         )
